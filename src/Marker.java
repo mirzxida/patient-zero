@@ -1,41 +1,130 @@
 import java.util.*;
 
-/**
- * Missions 3 and 4. Find a word in a long text.
- */
 public class Marker {
 
     /**
-     * Mission 3a. The prefix function of p. pi[i] = the length of the longest proper prefix of p[0..i] that is
-     * also a suffix of p[0..i] ("proper" means shorter than p[0..i] itself).
-     * Example: p = "ACGAC" gives [0, 0, 0, 1, 2]. The last number is the "Border length" line.
+     * Mission 3a. The prefix function of p.
      */
     public static int[] prefixFunction(String p) {
-        // TODO Mission 3a
-        return new int[p.length()];
+        int n = p.length();
+        int[] pi = new int[n];
+
+        for (int i = 1; i < n; i++) {
+            int j = pi[i - 1];
+            while (j > 0 && p.charAt(i) != p.charAt(j)) {
+                j = pi[j - 1]; // Откатываемся назад по массиву префиксов
+            }
+            if (p.charAt(i) == p.charAt(j)) {
+                j++;
+            }
+            pi[i] = j;
+        }
+
+        return pi;
     }
 
     /**
-     * Mission 3b. KMP. All start positions (counting from 0, in increasing order) where p occurs in text.
-     * Overlapping occurrences count: "ACG" occurs in "ACGACG" at 0 and 3, and "AA" in "AAA" at 0 and 1.
-     * Use the prefix function: the text pointer never goes back. The number of positions is "Marker hits",
-     * the first one is "First hit" (-1 when there is none).
+     * Mission 3b. KMP. All start positions where p occurs in text.
      */
     public static int[] findAll(String text, String p) {
-        // TODO Mission 3b
-        return new int[0];
+        if (p.length() == 0 || text.length() < p.length()) {
+            return new int[0];
+        }
+
+        int[] pi = prefixFunction(p);
+        List<Integer> positions = new ArrayList<>();
+        int j = 0; // Указатель для шаблона (p)
+
+        for (int i = 0; i < text.length(); i++) {
+            while (j > 0 && text.charAt(i) != p.charAt(j)) {
+                j = pi[j - 1]; // Если не совпало, сдвигаем указатель по таблице, не возвращая i назад
+            }
+            if (text.charAt(i) == p.charAt(j)) {
+                j++;
+            }
+            if (j == p.length()) {
+                positions.add(i - p.length() + 1); // Нашли полное совпадение
+                j = pi[j - 1]; // Чтобы найти перекрывающиеся вхождения (overlap)
+            }
+        }
+
+        int[] result = new int[positions.size()];
+        for (int i = 0; i < positions.size(); i++) {
+            result[i] = positions.get(i);
+        }
+        return result;
     }
 
     /**
-     * Mission 4. Rabin-Karp. The number of positions i in a such that the word of k letters starting at i
-     * (a[i..i+k-1]) also occurs somewhere in b. Count positions, not different words. This is the "Shared words" line.
-     * The idea: give every window of k letters a number (a rolling hash, updated in O(1) when the window moves by one),
-     * look the number up among the windows of b, and when it is found COMPARE THE LETTERS, because two different words
-     * can have the same hash.
-     * Example: a = "ACGTAC", b = "TTACGT", k = 4: the words of a are ACGT, CGTA, GTAC; only ACGT is in b, so the answer is 1.
+     * Mission 4. Rabin-Karp. The number of positions i in a such that a[i..i+k-1] occurs in b.
      */
     public static int sharedWords(String a, String b, int k) {
-        // TODO Mission 4
-        return -1;
+        if (a.length() < k || b.length() < k) return 0;
+
+        int prime = 31; // Простое число для основания хэша
+        long highestPower = 1;
+
+        // Предрасчет (prime^(k-1)) для удаления самого старого символа из окна в O(1)
+        for (int i = 0; i < k - 1; i++) {
+            highestPower *= prime;
+        }
+
+        // Карта для хранения [Хэш -> Список стартовых позиций в строке b]
+        Map<Long, List<Integer>> bHashes = new HashMap<>();
+        long currentHashB = 0;
+
+        // Хэш для самого первого окна в b
+        for (int i = 0; i < k; i++) {
+            currentHashB = currentHashB * prime + b.charAt(i);
+        }
+        bHashes.computeIfAbsent(currentHashB, x -> new ArrayList<>()).add(0);
+
+        // Rolling hash (двигаем окно по b)
+        for (int i = 1; i <= b.length() - k; i++) {
+            currentHashB = currentHashB - b.charAt(i - 1) * highestPower; // Убираем первую букву
+            currentHashB = currentHashB * prime + b.charAt(i + k - 1);    // Добавляем новую в конец
+            bHashes.computeIfAbsent(currentHashB, x -> new ArrayList<>()).add(i);
+        }
+
+        int sharedCount = 0;
+        long currentHashA = 0;
+
+        // Хэш для самого первого окна в a
+        for (int i = 0; i < k; i++) {
+            currentHashA = currentHashA * prime + a.charAt(i);
+        }
+
+        if (checkAndCompare(a, 0, b, bHashes, currentHashA, k)) {
+            sharedCount++;
+        }
+
+        // Rolling hash (двигаем окно по a)
+        for (int i = 1; i <= a.length() - k; i++) {
+            currentHashA = currentHashA - a.charAt(i - 1) * highestPower;
+            currentHashA = currentHashA * prime + a.charAt(i + k - 1);
+
+            if (checkAndCompare(a, i, b, bHashes, currentHashA, k)) {
+                sharedCount++;
+            }
+        }
+
+        return sharedCount;
+    }
+
+    // Вспомогательный метод: если хэши совпали, мы ОБЯЗАНЫ сравнить буквы, чтобы избежать коллизий
+    private static boolean checkAndCompare(String a, int indexA, String b, Map<Long, List<Integer>> bHashes, long hashA, int k) {
+        if (bHashes.containsKey(hashA)) {
+            for (int startB : bHashes.get(hashA)) {
+                boolean match = true;
+                for (int x = 0; x < k; x++) {
+                    if (a.charAt(indexA + x) != b.charAt(startB + x)) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) return true; // Если хотя бы одно реальное совпадение найдено
+            }
+        }
+        return false;
     }
 }
